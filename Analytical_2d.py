@@ -1,10 +1,9 @@
 """
-analytical_2d.py
+src/Analytical_2d.py
 
 Analytical solution for free 2D diffusion from a point source.
 
-This module is used as the reference solution for validating the
-Brownian and continuum numerical models.
+This module is used as the reference solution for validating the Brownian and continuum numerical models.
 
 Assumptions:
 1. Infinite, homogeneous 2D medium
@@ -13,8 +12,7 @@ Assumptions:
 4. No external concentration gradient, force, or flow
 5. Single Point-source initial condition
 
-Array convention:
-concentration[y, x]
+Array convention: concentration[y, x]
 
 The analytical solution is:
 
@@ -24,12 +22,11 @@ The analytical solution is:
 import numpy as np
 import Config
 
-
 # 1. GRID CREATION
 def Grid_Creator(
     width=101,
     height=101,
-    l=1.0,
+    dx=1.0,
     source_x=None,
     source_y=None
 ):
@@ -56,25 +53,20 @@ def Grid_Creator(
 
     if width < 1 or height < 1:
         raise ValueError("Width and height must be positive.")
-
-    if l <= 0:
+    if dx <= 0:
         raise ValueError("Grid length must be positive.")
-
     if source_x is None:
         source_x = width // 2
-
     if source_y is None:
         source_y = height // 2
-
     if source_x < 0 or abs(source_x) >= width:
         raise ValueError("source_x is outside the grid.")
-
     if source_y < 0 or abs(source_y) >= height:
         raise ValueError("source_y is outside the grid.")
 
     # Coordinates are measured relative to the source, ensuring that the grid centers at the source
-    x = (np.arange(width) - source_x) * l
-    y = (np.arange(height) - source_y) * l
+    x = (np.arange(width) - source_x) * dx
+    y = (np.arange(height) - source_y) * dx
 
     X, Y = np.meshgrid(x, y)
 
@@ -87,7 +79,7 @@ def analytical_point_source(
     t,
     width=101,
     height=101,
-    l=1.0,
+    dx=1.0,
     diffusion_coefficient=1.0,
     total_mass=1.0,
     source_x=None,
@@ -124,7 +116,7 @@ def analytical_point_source(
     X, Y, x, y, source_x, source_y = Grid_Creator(
         width=width,
         height=height,
-        l=l,
+        dx=dx,
         source_x=source_x,
         source_y=source_y
     )
@@ -186,7 +178,7 @@ def analytical_diffusion_frames(
     time_interval,
     width=101,
     height=101,
-    l=1.0,
+    dx=1.0,
     diffusion_coefficient=1.0,
     total_mass=1.0,
     source_x=None,
@@ -216,7 +208,7 @@ def analytical_diffusion_frames(
             t=t,
             width=width,
             height=height,
-            l=l,
+            dx=dx,
             diffusion_coefficient=diffusion_coefficient,
             total_mass=total_mass,
             source_x=source_x,
@@ -289,7 +281,7 @@ def centerline_profile(
 
 # 6. TOTAL MASS
 
-def calculate_total_mass(concentration, l=1.0):
+def calculate_total_mass(concentration,dx=1.0):
     """
     Estimate total mass in the 2D concentration field.
 
@@ -307,10 +299,10 @@ def calculate_total_mass(concentration, l=1.0):
 
     if concentration.ndim != 2:
         raise ValueError("concentration must be a 2D array.")
-    if l <= 0:
+    if dx <= 0:
         raise ValueError("l must be greater than zero.")
 
-    mass = np.sum(concentration) * l**2
+    mass = np.sum(concentration) * dx**2
     #This approximamtion idea based on M approximately equals to Cxy * dx * dy, which should be done through double rieman sum or surface integral
     #We migh do that ...
     return mass
@@ -404,7 +396,7 @@ def run_from_config():
         time_interval=time_interval,
         width=Config.GRID_WIDTH,
         height=Config.GRID_HEIGHT,
-        l=Config.l,
+        dx=Config.DX,
         diffusion_coefficient=Config.DIFFUSION_COEFFICIENT,
         total_mass=Config.TOTAL_MASS,
         source_x=source_x,
@@ -414,13 +406,8 @@ def run_from_config():
     mass_history = []
 
     for frame in frames:
-        mass = calculate_total_mass(
-            concentration=frame,
-            l=Config.l
-        )
-
+        mass = calculate_total_mass(concentration=frame,dx=Config.DX)
         mass_history.append(mass)
-
     mass_history = np.array(mass_history)
 
     msd = analytical_msd(
@@ -439,13 +426,10 @@ def run_from_config():
         "diffusion_coefficient": Config.DIFFUSION_COEFFICIENT,
         "total_mass": Config.TOTAL_MASS,
         "dt": Config.DT,
-        "l": Config.l
+        "dx": Config.DX
     }
 
     return result
-
-
-
 
 
 # 9. MODULE TEST
