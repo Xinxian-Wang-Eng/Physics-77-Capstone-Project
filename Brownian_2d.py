@@ -2,7 +2,6 @@
 brownian_2d.py
 
 Particle-based 2D diffusion using an unbiased lattice random walk.
-
 At each timestep, every particle can move:
 
     right
@@ -13,10 +12,8 @@ At each timestep, every particle can move:
 
 The four movement directions have equal probability.
 
-The probabilities are chosen so that the random walk represents
-the configured diffusion coefficient:
+The probabilities are chosen so that the random walk represents the configured diffusion coefficient:
 
-    move probability in each direction = D * dt / dx^2
 
 Array conventions
 -----------------
@@ -28,75 +25,34 @@ coordinate:
 
 frames[time_index, y, x]
 """
-
+import Config
 import numpy as np
-
-def calculate_move_probability(
-    diffusion_coefficient,
-    dt,
-    dx
-):
-    """
-    Calculate the probability of moving in each direction
-    during one timestep.
-
-    Returns
-    -------
-    move_probability : float
-        Probability of moving in EACH of the four directions.
-    """
-
-    if diffusion_coefficient <= 0:
-        raise ValueError(
-            "diffusion_coefficient must be positive."
-        )
-
-    if dt <= 0:
-        raise ValueError(
-            "dt must be positive."
-        )
-
-    if dx <= 0:
-        raise ValueError(
-            "dx must be positive."
-        )
-
-    move_probability = (diffusion_coefficient * dt / dx**2)
-
-    if move_probability > 0.25:
-        raise ValueError(
-            "D * dt / dx^2 must be <= 0.25."
-        )
-
-    return move_probability
+from src.Diffusion_rates import (
+    calculate_hopping_rate,
+    calculate_diffusion_ratio,
+    validate_2d_diffusion_ratio,
+    calculate_stay_probability_2d,
+    calculate_transition_probability,
+    calculate_transition_probabilities_2d,
+    calculate_biased_probabilities_2d
+)
+from src.Analysis import (fit_diffusion_coefficient_from_msd)
 
 
-def initialize_particles(
-    n_particles,
-    source_x,
-    source_y
-):
+def initialize_particles(n_particles, source_x, source_y):
     """
     Place all particles at the point-source location.
 
     Returns
-    -------
-    positions : numpy.ndarray
-        Shape (n_particles, 2).
-
+    positions : numpy.ndarray with Shape (n_particles, 2).
         coordinate 0 = x
         coordinate 1 = y
     """
 
     if n_particles <= 0:
-        raise ValueError(
-            "n_particles must be positive."
-        )
+        raise ValueError("n_particles must be positive.")
 
-    positions = np.zeros(
-        (n_particles, 2),
-        dtype=int
-    )
+    positions = np.zeros((n_particles, 2), dtype=int)
     #This part creates a large vertical array (maybe something like 100000 by 2), each row corresponds to a particle and the two columns representing x and y coords
     #This allows us to not iterate by 100000 times, but doing only array modifications
     positions[:, 0] = source_x
@@ -104,49 +60,54 @@ def initialize_particles(
 
     return positions
 
+
+
 def brownian_step(
     positions,
-    move_probability,
+    p_right,
+    p_left,
+    p_up,
+    p_down,
     width,
     height,
-    rng
-):
+    rng):
     """
     Perform one random-walk timestep.
-
     Particles can move right, left, up, down, or stay.
-
     Reflecting outer boundaries are used:
-    an attempted move outside the grid is rejected.
     """
 
     n_particles = len(positions)
 
     # Random number between 0 and 1 for every particle
-    random_values = rng.random(
-        n_particles
-    )
+    random_values = rng.random(n_particles)
 
     new_positions = positions.copy()
 
-    p = move_probability
+    right_limit = (p_right)
+    left_limit = (right_limit+ p_left)
+    up_limit = (left_limit+ p_up)
+    down_limit = (up_limit+ p_down)
 
-
-    move_right = (random_values < p)
-    move_left = ((random_values >= p) & (random_values < 2 * p))
-    move_up = ((random_values >= 2 * p) & (random_values < 3 * p))
-    move_down = ((random_values >= 3 * p) & (random_values < 4 * p))
+    move_right = (random_values < right_limit)
+    move_left = ((random_values >= right_limit)& (random_values < left_limit))
+    move_up = ((random_values >= left_limit)& (random_values < up_limit))
+    move_down = (random_values >= up_limit)& (random_values < down_limit)
+    #=====================================================================================================================================================================================================================
     #This part controls the movement of the particle in a rather independent way, guaranteeing that at every time, four potential movements have the same probability being taken
     #However, it eliminates the possibility of moving diagonally, which might be addressed by dividing tick into two, allowing more pending ticks to be taken
-    # Remaining particles stay where they are.
+    # If random_value >= 4*r, it's automatically staying still
+    #=====================================================================================================================================================================================================================
+    #The above  part wwas for original unbiased case
+    #Now, each direction has independent probability
 
+    # Remaining particles stay where they are.
     new_positions[move_right, 0] += 1
     new_positions[move_left, 0] -= 1
     new_positions[move_up, 1] += 1
     new_positions[move_down, 1] -= 1
 
     # Reflecting outer boundaries
-
     outside = (
         (new_positions[:, 0] < 0)
         | (new_positions[:, 0] >= width)
@@ -180,18 +141,11 @@ def positions_to_concentration(
     n_particles = len(positions)
 
     if n_particles == 0:
-        raise ValueError(
-            "There must be at least one particle."
-        )
+        raise ValueError("There must be at least one particle.")
 
-    particle_mass = (
-        total_mass / n_particles
-    )
+    particle_mass = (total_mass / n_particles)
 
-    counts = np.zeros(
-        (height, width),
-        dtype=int
-    )
+    counts = np.zeros((height, width), dtype=int)
 
     x = positions[:, 0]
     y = positions[:, 1]
@@ -214,25 +168,10 @@ def calculate_msd(
     current particle positions.
     """
 
-    displacement_x = (
-        positions[:, 0]
-        - source_x
-    ) * dx
-
-    displacement_y = (
-        positions[:, 1]
-        - source_y
-    ) * dx
-
-    squared_displacement = (
-        displacement_x**2
-        +
-        displacement_y**2
-    )
-
-    msd = np.mean(
-        squared_displacement
-    )
+    displacement_x = (positions[:, 0] - source_x) * dx
+    displacement_y = (positions[:, 1] - source_y) * dx
+    squared_displacement = (displacement_x**2 + displacement_y**2)
+    msd = np.mean(squared_displacement)
 
     return msd
 
@@ -248,8 +187,9 @@ def simulate_brownian_2d(
     total_mass,
     source_x,
     source_y,
+    probabilities,
     save_every=1,
-    seed=None
+    seed=Config.RANDOM_SEED
 ):
     """
     Simulate 2D Brownian diffusion using random walkers.
@@ -258,14 +198,8 @@ def simulate_brownian_2d(
     Concentration fields are saved at selected timesteps.
 
     Returns
-    -------
-    frames : numpy.ndarray
-        Concentration fields with shape:
-
-            [time_index, y, x]
-
-    times : numpy.ndarray
-        Physical times corresponding to saved frames.
+    frames : numpy.ndarray, Concentration fields with shape: [time_index, y, x]
+    times : numpy.ndarray, Physical times corresponding to saved frames.
     """
 
     if steps <= 0:
@@ -276,9 +210,12 @@ def simulate_brownian_2d(
 
     rng = np.random.default_rng(seed)
 
-    move_probability = (calculate_move_probability(diffusion_coefficient, dt, dx))
-
     positions = initialize_particles(n_particles, source_x, source_y)
+    p_right = probabilities["right"]
+    p_left = probabilities["left"]
+    p_up = probabilities["up"]
+    p_down = probabilities["down"]
+    p_stay = probabilities["stay"]
 
     frames = []
     times = []
@@ -298,14 +235,16 @@ def simulate_brownian_2d(
     times.append(0.0)
     msd_history.append(0.0)
     mass_history.append(
-    np.sum(concentration) * dx**2
-)
+    np.sum(concentration) * dx**2)
     # Time evolution
 
     for step in range(1, steps + 1):
         positions = brownian_step(
             positions,
-            move_probability,
+            p_right,
+            p_left,
+            p_up,
+            p_down,
             width,
             height,
             rng
@@ -336,12 +275,16 @@ def run_from_config():
     Run the Brownian simulation using config.py.
     """
 
-    import Config
-
-    from src.Analysis import (fit_diffusion_coefficient_from_msd)
-
     Config.validate_config()
-
+    #Calculate Transition Probabilities
+    r = calculate_diffusion_ratio(Config.DIFFUSION_COEFFICIENT, Config.DT, Config.DX)
+    validate_2d_diffusion_ratio(r)
+    probabilities = calculate_transition_probabilities_2d(r)
+    p_right = probabilities["right"]
+    p_left = probabilities["left"]
+    p_up = probabilities["up"]
+    p_down = probabilities["down"]
+    p_stay = probabilities["stay"]
     source_x, source_y = (Config.get_source_position())
 
     (frames, times, msd, mass_history) = simulate_brownian_2d(
@@ -349,15 +292,17 @@ def run_from_config():
         steps=Config.NUM_STEPS,
         width=Config.GRID_WIDTH,
         height=Config.GRID_HEIGHT,
-        dx=Config.l,
+        dx=Config.DX,
         dt=Config.DT,
         diffusion_coefficient=Config.DIFFUSION_COEFFICIENT,
         total_mass=Config.TOTAL_MASS,
         source_x=source_x,
         source_y=source_y,
+        probabilities=probabilities,
         save_every=Config.SAVE_EVERY,
         seed=Config.RANDOM_SEED
     )
+    from src.Analysis import (fit_diffusion_coefficient_from_msd,calculate_percent_error)    
 
     (measured_D, msd_slope, msd_intercept) = fit_diffusion_coefficient_from_msd(
         times,
@@ -365,14 +310,11 @@ def run_from_config():
         start_fraction=Config.FIT_START_FRACTION,
         end_fraction=Config.FIT_END_FRACTION
     )
+    percent_error = calculate_percent_error(measured_D,Config.DIFFUSION_COEFFICIENT)
+    hopping_rate = calculate_hopping_rate(Config.DIFFUSION_COEFFICIENT, Config.DX)
+    r = calculate_diffusion_ratio(Config.DIFFUSION_COEFFICIENT, Config.DT, Config.DX)
+    stay_probability = (calculate_stay_probability_2d(r))
 
-    move_probability = (
-        calculate_move_probability(
-            Config.DIFFUSION_COEFFICIENT,
-            Config.DT,
-            Config.l
-        )
-    )
 
     result = {
         "model": "brownian",
@@ -380,41 +322,28 @@ def run_from_config():
         "frames": frames,
         "msd": msd,
         "mass": mass_history,
-
-        "source_position": (
-            source_x,
-            source_y
-        ),
-
-        "diffusion_coefficient":
-            Config.DIFFUSION_COEFFICIENT,
-
-        "measured_diffusion_coefficient":
-            measured_D,
-
-        "msd_slope":
-            msd_slope,
-
-        "msd_intercept":
-            msd_intercept,
-
-        "move_probability":
-            move_probability,
-
-        "total_mass":
-            Config.TOTAL_MASS,
-
-        "num_particles":
-            Config.NUM_PARTICLES,
-
-        "l":
-            Config.l,
-
-        "dt":
-            Config.DT,
-
-        "seed":
-            Config.RANDOM_SEED
+        "move_probability": r,
+        "right_probability": p_right,
+        "left_probability":p_left,
+        "up_probability":p_up,
+        "down_probability":p_down,
+        "stay_probability":p_stay,
+        "source_position": (source_x,source_y),
+        "diffusion_coefficient":Config.DIFFUSION_COEFFICIENT,
+        "measured_diffusion_coefficient":measured_D,
+        "msd_slope":msd_slope,
+        "msd_intercept":msd_intercept,
+        "hopping_rate": hopping_rate,
+        "stay_probability": stay_probability,
+        "total_mass":Config.TOTAL_MASS,
+        "num_particles":Config.NUM_PARTICLES,
+        "dx":Config.DX,
+        "dt":Config.DT,
+        "seed":Config.RANDOM_SEED,
+        "diffusion_coefficient":Config.DIFFUSION_COEFFICIENT,
+        "measured_diffusion_coefficient":measured_D,
+        "diffusion_percent_error":percent_error,
     }
 
     return result
+
