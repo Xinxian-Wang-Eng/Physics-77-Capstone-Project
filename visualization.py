@@ -150,30 +150,15 @@ def plot_heatmap(
     Plot one 2D concentration field.
 
     Parameters
-    ----------
-    concentration : numpy.ndarray
-        2D concentration array with shape [y, x].
-
-    dx : float
-        Physical grid spacing.
-
-    title : str
-        Title of the plot.
-
-    threshold : float
-        Concentration values below this threshold are transparent.
-
-    vmax : float or None
-        Maximum concentration represented by the color scale.
-        If None, the maximum of the current frame is used.
-
-    show_colorbar : bool
-        Whether to show the concentration colorbar.
+    concentration : numpy.ndarray, 2D concentration array with shape [y, x].
+    dx : float, Physical grid spacing.
+    title : str, Title of the plot.
+    threshold : float, Concentration values below this threshold are transparent.
+    vmax : float or None, Maximum concentration represented by the color scale. If None, the maximum of the current frame is used.
+    show_colorbar : bool, Whether to show the concentration colorbar.
 
     Returns
-    -------
-    fig, ax
-        Matplotlib figure and axes.
+    fig, ax: Matplotlib figure and axes.
     """
 
     concentration = np.asarray(concentration)
@@ -207,7 +192,6 @@ def plot_heatmap(
     ax.set_aspect("equal")
 
     if show_colorbar:
-
         colorbar = plt.colorbar(image, ax=ax)
         colorbar.set_label("Concentration")
 
@@ -215,12 +199,7 @@ def plot_heatmap(
 
     return fig, ax
 
-def plot_result_frame(
-    result,
-    frame_index=20,
-    threshold=1e-12,
-    fixed_color_scale=True
-):
+def plot_result_frame(result,frame_index=20,threshold=1e-12,fixed_color_scale=True):
     """
     Plot one concentration frame from a simulation result dictionary.
 
@@ -252,7 +231,7 @@ def plot_result_frame(
     concentration = frame[frame_index]
     time = times[frame_index]
     model = result["model"]
-    l = result["l"]
+    dx = result["DX"]
 
     if fixed_color_scale:
         vmax = np.max(frame)
@@ -263,18 +242,14 @@ def plot_result_frame(
 
     return plot_heatmap(
         concentration=concentration,
-        l=l,
+        dx=dx,
         title=title,
         threshold=threshold,
         vmax=vmax
     )
 
 
-def show_heatmap_slider(
-    result,
-    threshold=1e-12,
-    fixed_color_scale=True
-):
+def show_heatmap_slider(result, threshold=1e-12, fixed_color_scale=True):
     """
     Display concentration frames with an interactive time slider.
 
@@ -296,7 +271,7 @@ def show_heatmap_slider(
     frame = np.asarray(result["frames"])
     times = np.asarray(result["times"])
     model = result["model"]
-    l = result["l"]
+    dx = result["dx"]
 
     if len(frame) != len(times):
         raise ValueError("Number of frames must match number of times.")
@@ -306,8 +281,8 @@ def show_heatmap_slider(
     height = frame.shape[1]
     width = frame.shape[2]
 
-    x_max = (width - 1) * l
-    y_max = (height - 1) * l
+    x_max = (width - 1) * dx
+    y_max = (height - 1) * dx
 
     cmap = get_concentration_colormap()
 
@@ -459,47 +434,145 @@ def plot_mass_history(result):
     return fig, ax
 
 
-def plot_convergence(
-    results
-):
+def plot_convergence(results):
     """
     Plot continuum RMSE versus grid spacing.
     """
 
-    dx_values = [
-        result["dx"]
-        for result in results
-    ]
+    dx_values = [result["dx"] for result in results]
+    rmse_values = [result["rmse"] for result in results]
 
-    rmse_values = [
-        result["rmse"]
-        for result in results
-    ]
-
-    fig, ax = plt.subplots(
-        figsize=(7, 5)
-    )
-
-    ax.plot(
-        dx_values,
-        rmse_values,
-        marker="o"
-    )
-
-    ax.set_xlabel(
-        "Grid spacing dx"
-    )
-
-    ax.set_ylabel(
-        "RMSE"
-    )
-
-    ax.set_title(
-        "Continuum Grid Convergence"
-    )
-
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(dx_values, rmse_values, marker="o")
+    ax.set_xlabel("Grid spacing dx")
+    ax.set_ylabel("RMSE")
+    ax.set_title("Continuum Grid Convergence")
     ax.grid(True)
 
     plt.show()
 
     return fig, ax
+
+
+def plot_comparison_msd(comparison):
+    """
+    Plot MSD versus time for Brownian, Master Equation, and Continuum diffusion on the same axes.
+
+    Also plots the theoretical 2D diffusion prediction:
+        MSD = 4 * D * t
+    The comparison dictionary is produced by compare_model_results() in Analysis.py.
+    """
+
+    # Get common time array
+    times = comparison["times"]
+
+
+    # Get MSD histories from each model
+    brownian_msd = (comparison["brownian_result"]["msd"])
+    master_msd = (comparison["master_result"]["msd"])
+    continuum_msd = (comparison["continuum_result"]["msd"])
+
+
+    # Get the input diffusion coefficient
+    diffusion_coefficient = (comparison["master_result"]["diffusion_coefficient"])
+
+
+    # Theoretical MSD
+    # For unbiased diffusion in two dimensions:
+    #       MSD = 4 D t
+    # Since the comparison currently requires a point source, the theoretical MSD begins at zero.
+
+    theoretical_msd = (4* diffusion_coefficient* times)
+
+    # Plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        times,
+        brownian_msd,
+        label="Brownian"
+    )
+    plt.plot(
+        times,
+        master_msd,
+        label="Master Equation"
+    )
+    plt.plot(
+        times,
+        continuum_msd,
+        label="Continuum"
+    )
+    plt.plot(
+        times,
+        theoretical_msd,
+        linestyle="--",
+        label="Theory: MSD = 4Dt"
+    )
+
+
+    # Labels
+    plt.xlabel("Time")
+    plt.ylabel("Mean Squared Displacement")
+    plt.title("MSD Comparison Between Diffusion Models")
+    plt.legend()
+    plt.grid(True,alpha=0.3)
+    plt.tight_layout()
+
+    plt.show()
+
+
+def plot_comparison_rmse(comparison):
+    """
+    Plot concentration-field RMSE versus time for:
+
+        Brownian vs Master Equation
+        Brownian vs Continuum
+        Master Equation vs Continuum
+
+    RMSE measures the difference between the complete
+    2D concentration fields at each saved timestep.
+    """
+
+    # Common saved time array
+    times = comparison["times"]
+
+    # RMSE histories calculated in Analysis.py
+    brownian_master_rmse = (comparison["brownian_master_rmse"])
+    brownian_continuum_rmse = (comparison["brownian_continuum_rmse"])
+    master_continuum_rmse = (comparison["master_continuum_rmse"])
+
+
+    # Plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        times,
+        brownian_continuum_rmse,
+        label="Brownian vs Continuum",
+        linestyle="-"
+    )
+
+    plt.plot(
+        times,
+        brownian_master_rmse,
+        label="Brownian vs Master",
+        linestyle="--",
+        marker="o",
+        markevery=10
+    )
+
+    plt.plot(
+        times,
+        master_continuum_rmse,
+        label="Master vs Continuum",
+        linestyle="-"
+    )
+
+
+    # Labels
+    plt.xlabel("Time")
+    plt.ylabel("Concentration RMSE")
+    plt.title("Concentration-Field Difference Between Models")
+    plt.legend()
+    plt.grid(True,alpha=0.3)
+    plt.tight_layout()
+
+    plt.show()
